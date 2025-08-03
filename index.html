@@ -239,6 +239,63 @@
     .navbar a:hover {
       color: #36A2EB;
     }
+    /* Login Modal */
+    #login-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(240, 242, 245, 0.97);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+    #login-modal .modal-content {
+      background: #fff;
+      padding: 32px 24px;
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+      max-width: 350px;
+      width: 90%;
+      text-align: center;
+    }
+    #login-modal h2 {
+      margin-bottom: 18px;
+      color: #36A2EB;
+    }
+    #login-modal input {
+      width: 100%;
+      padding: 12px 10px;
+      margin-bottom: 16px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 1rem;
+    }
+    #login-modal button {
+      width: 100%;
+      padding: 12px 0;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+      margin-bottom: 10px;
+    }
+    #login-modal #login-btn {
+      background: #36A2EB;
+      color: #fff;
+    }
+    #login-modal #create-user-btn {
+      background: #43e97b;
+      color: #fff;
+    }
+    #login-modal #login-error {
+      color: #e74c3c;
+      margin-top: 12px;
+      font-size: 0.95rem;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -249,6 +306,7 @@
       <li><a href="#" id="nav-entry">Input</a></li>
       <li><a href="#" id="nav-history">History</a></li>
     </ul>
+    <button id="logout-btn" style="margin-top:30px;padding:10px 18px;background:#e74c3c;color:#fff;border:none;border-radius:8px;font-size:1rem;cursor:pointer;">Logout</button>
   </nav>
   <div class="container">
     <h1>Personal Finance Portfolio</h1>
@@ -355,8 +413,40 @@
       </div>
     </section>
   </div>
+  <!-- Login/Create User Modal -->
+  <div id="login-modal" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:rgba(240,242,245,0.97);display:flex;align-items:center;justify-content:center;z-index:9999;">
+    <div style="background:#fff;padding:32px 24px;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.12);max-width:350px;width:90%;text-align:center;">
+      <h2 style="margin-bottom:18px;color:#36A2EB;">Welcome to Personal Finance</h2>
+      <input id="login-username" type="text" placeholder="Enter username" style="width:100%;padding:12px 10px;margin-bottom:16px;border-radius:8px;border:1px solid #ccc;font-size:1rem;">
+      <button id="login-btn" style="width:100%;padding:12px 0;background:#36A2EB;color:#fff;border:none;border-radius:8px;font-size:1rem;cursor:pointer;margin-bottom:10px;">Login</button>
+      <div style="margin:10px 0;color:#888;font-size:0.95rem;">or</div>
+      <button id="create-user-btn" style="width:100%;padding:12px 0;background:#43e97b;color:#fff;border:none;border-radius:8px;font-size:1rem;cursor:pointer;">Create New User</button>
+      <div id="login-error" style="color:#e74c3c;margin-top:12px;font-size:0.95rem;display:none;"></div>
+    </div>
+  </div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script>
+  // Google Sheets API integration
+  const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyVrXTah9Ig4Lgj4jRFLZcjn7KtCRxjUF3BJGW6YY4Fi7vg27x86qpMvXY1TeDtA_4PNQ/exec";
+
+  function saveToGoogleSheets(data, user="default") {
+    fetch(GOOGLE_SCRIPT_URL + "?action=save&user=" + encodeURIComponent(user), {
+      method: "POST",
+      body: JSON.stringify(data),
+      headers: { "Content-Type": "application/json" }
+    })
+    .then(res => res.text())
+    .then(msg => alert("Backup to Google Sheets: " + msg));
+  }
+
+  function loadFromGoogleSheets(user="default", callback) {
+    fetch(GOOGLE_SCRIPT_URL + "?action=load&user=" + encodeURIComponent(user), {
+      method: "POST"
+    })
+    .then(res => res.json())
+    .then(rows => callback(rows));
+  }
+
     // Sample data
     const data = {
       salary: 5000,
@@ -441,6 +531,22 @@
       });
       data.expenses = expObj;
       updateDashboard();
+      // Save to Google Sheets if month is selected
+      const month = document.getElementById('month-input').value;
+      if (month) {
+        const entry = {
+          month,
+          salary: data.salary,
+          expenses: {...data.expenses},
+          liabilities: data.liabilities,
+          savings: data.savings,
+          investment: data.investment,
+          profit: data.profit,
+          currency: data.currency
+        };
+        saveToGoogleSheets(entry, localStorage.getItem('financeUser') || 'default');
+        setTimeout(loadHistoryFromGoogleSheets, 1000);
+      }
     });
 
     // Add new expense row
@@ -490,34 +596,40 @@
       hideNavbarOnMobile();
     });
 
-    // Load history from localStorage
-    function loadHistory() {
-      const history = JSON.parse(localStorage.getItem('financeHistory') || '[]');
-      const tbody = document.querySelector('#history-table tbody');
-      tbody.innerHTML = '';
-      history.forEach((entry, idx) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${entry.month}</td>
-          <td>${entry.currency} ${entry.salary}</td>
-          <td>${entry.currency} ${Object.values(entry.expenses).reduce((a,b)=>a+b,0)}</td>
-          <td>${entry.currency} ${entry.liabilities}</td>
-          <td>${entry.currency} ${entry.savings}</td>
-          <td>${entry.currency} ${entry.investment}</td>
-          <td style="color:${entry.profit>0?'#43e97b':'#e53935'}">${entry.currency} ${entry.profit}</td>
-          <td>${entry.currency}</td>
+    // Load history from Google Sheets and display in table
+function loadHistoryFromGoogleSheets() {
+  loadFromGoogleSheets(localStorage.getItem('financeUser') || 'default', function(rows) {
+    const tbody = document.querySelector('#history-table tbody');
+    tbody.innerHTML = '';
+    // rows: [user, month, salary, expenses(json), liabilities, savings, investment, profit, currency]
+    rows.forEach(function(row, idx) {
+      if (row.length < 9) return; // skip incomplete rows
+      const expensesObj = JSON.parse(row[3] || '{}');
+      const totalExpenses = Object.values(expensesObj).reduce((a,b)=>a+b,0);
+      tbody.innerHTML += `
+        <tr>
+          <td>${row[1]}</td>
+          <td>${row[8]} ${row[2]}</td>
+          <td>${row[8]} ${totalExpenses}</td>
+          <td>${row[8]} ${row[4]}</td>
+          <td>${row[8]} ${row[5]}</td>
+          <td>${row[8]} ${row[6]}</td>
+          <td style="color:${row[7]>0?'#43e97b':'#e53935'}">${row[8]} ${row[7]}</td>
+          <td>${row[8]}</td>
           <td><button type="button" class="download-pdf" data-idx="${idx}">PDF</button></td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
-    loadHistory();
+        </tr>
+      `;
+    });
+  });
+}
+
+// Call this on page load to show Google Sheets data
+loadHistoryFromGoogleSheets();
 
     // Save history
     document.getElementById('save-history').addEventListener('click', function() {
       const month = document.getElementById('month-input').value;
       if (!month) { alert('Please select a month.'); return; }
-      const history = JSON.parse(localStorage.getItem('financeHistory') || '[]');
       // Save current data snapshot
       const entry = {
         month,
@@ -529,12 +641,10 @@
         profit: data.profit,
         currency: data.currency
       };
-      // Replace if month exists
-      const idx = history.findIndex(e => e.month === month);
-      if (idx >= 0) history[idx] = entry;
-      else history.push(entry);
-      localStorage.setItem('financeHistory', JSON.stringify(history));
-      loadHistory();
+      // Backup to Google Sheets
+      saveToGoogleSheets(entry, localStorage.getItem('financeUser') || 'default');
+      // Optionally, update table after save
+      setTimeout(loadHistoryFromGoogleSheets, 1000);
       alert('Month saved!');
     });
 
@@ -576,6 +686,115 @@
       const nav = document.querySelector('.navbar');
       nav.style.display = nav.style.display === 'flex' ? 'none' : 'flex';
     });
+
+    // Login/Create User logic
+function showLoginModal() {
+  document.getElementById('login-modal').style.display = 'flex';
+  // Hide all main content until login
+  document.querySelector('.container').style.display = 'none';
+  document.querySelector('.navbar').style.display = 'none';
+  document.getElementById('navbar-toggle').style.display = 'none';
+}
+function hideLoginModal() {
+  document.getElementById('login-modal').style.display = 'none';
+  document.querySelector('.container').style.display = 'block';
+  checkMobile();
+}
+function setUser(username) {
+  localStorage.setItem('financeUser', username);
+}
+function getUser() {
+  return localStorage.getItem('financeUser');
+}
+function logoutUser() {
+  localStorage.removeItem('financeUser');
+  showLoginModal();
+}
+// Always require login on page load
+showLoginModal();
+// Only show dashboard after login
+function loadLatestMonthToDashboard() {
+  loadFromGoogleSheets(getUser() || 'default', function(rows) {
+    // Find the latest (last) row for this user
+    if (!rows || !rows.length) return;
+    let lastRow = null;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      if (rows[i].length >= 9) {
+        lastRow = rows[i];
+        break;
+      }
+    }
+    if (lastRow) {
+      // [user, month, salary, expenses(json), liabilities, savings, investment, profit, currency]
+      data.salary = parseFloat(lastRow[2]) || 0;
+      data.expenses = JSON.parse(lastRow[3] || '{}');
+      data.liabilities = parseFloat(lastRow[4]) || 0;
+      data.savings = parseFloat(lastRow[5]) || 0;
+      data.investment = parseFloat(lastRow[6]) || 0;
+      data.profit = parseFloat(lastRow[7]) || 0;
+      data.currency = lastRow[8] || 'QAR';
+      updateDashboard();
+      // Sync input form fields
+      document.getElementById('salary-input').value = data.salary;
+      document.getElementById('liabilities-input').value = data.liabilities;
+      document.getElementById('savings-input').value = data.savings;
+      document.getElementById('investment-input').value = data.investment;
+      document.getElementById('profit-input').value = data.profit;
+      document.getElementById('currency-input').value = data.currency;
+      document.getElementById('month-input').value = lastRow[1] || '';
+      // Expenses
+      const expenseInputs = document.getElementById('expense-inputs');
+      expenseInputs.innerHTML = '';
+      for (const [name, val] of Object.entries(data.expenses)) {
+        const row = document.createElement('div');
+        row.className = 'expense-row';
+        row.innerHTML = `<input type="text" name="expense-name" placeholder="Category" required value="${name}">
+                         <input type="number" name="expense-value" placeholder="Amount" required value="${val}">
+                         <button type="button" class="remove-expense">×</button>`;
+        expenseInputs.appendChild(row);
+      }
+    }
+  });
+}
+document.getElementById('login-btn').onclick = function() {
+  const username = document.getElementById('login-username').value.trim();
+  if (!username) {
+    document.getElementById('login-error').innerText = 'Please enter a username.';
+    document.getElementById('login-error').style.display = 'block';
+    return;
+  }
+  setUser(username);
+  hideLoginModal();
+  loadHistoryFromGoogleSheets();
+  loadLatestMonthToDashboard();
+};
+document.getElementById('create-user-btn').onclick = function() {
+  const username = document.getElementById('login-username').value.trim();
+  if (!username) {
+    document.getElementById('login-error').innerText = 'Please enter a username.';
+    document.getElementById('login-error').style.display = 'block';
+    return;
+  }
+  setUser(username);
+  hideLoginModal();
+  loadHistoryFromGoogleSheets();
+  loadLatestMonthToDashboard();
+};
+document.getElementById('logout-btn').onclick = function() {
+  logoutUser();
+  // Clear dashboard and history
+  document.getElementById('salary').innerText = 'QAR 0';
+  document.getElementById('total-expenses').innerText = 'QAR 0';
+  document.getElementById('liabilities').innerText = 'QAR 0';
+  document.getElementById('savings').innerText = 'QAR 0';
+  document.getElementById('investment').innerText = 'QAR 0';
+  document.getElementById('profit').innerText = 'QAR 0';
+  document.querySelector('#history-table tbody').innerHTML = '';
+};
+// Prevent showing dashboard if not logged in
+if (!getUser()) {
+  showLoginModal();
+}
   </script>
 </body>
 </html>
